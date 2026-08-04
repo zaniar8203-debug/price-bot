@@ -11,15 +11,15 @@ HEADERS = {
     "Accept-Language": "fa-IR,fa;q=0.9,en;q=0.8",
 }
 
-SYMBOLS = {
-    "price_dollar_rl": ("\U0001f1fa\U0001f1f8", "دلار آزاد"),
-    "price_dollar_lr": ("\U0001f1f8\U0001f1ff", "دلار رسمی"),
-    "crypto-tether-irr": ("\U0001f4b0", "تتر USDT"),
-    "crypto-bitcoin": ("⚡", "بیتکوین"),
-    "geram18": ("\U0001f48e", "طلای 18 عیار هر گرم"),
-    "mesghal": ("⬛", "مثقال طلا"),
-    "sekee": ("\U0001f947", "سکه امامی"),
-}
+SYMBOLS = [
+    ("price_dollar_rl", "\U0001f1fa\U0001f1f8", "دلار آزاد"),
+    ("price_dollar_lr", "\U0001f1f8\U0001f1ff", "دلار رسمی"),
+    ("crypto-tether-irr", "\U0001f4b0", "تتر USDT"),
+    ("crypto-bitcoin", "⚡", "بیتکوین"),
+    ("geram18", "\U0001f48e", "طلای 18 عیار (هر گرم)"),
+    ("mesghal", "⬛", "مثقال طلا"),
+    ("sekee", "\U0001f947", "سکه امامی"),
+]
 
 USD_SYMBOLS = {"crypto-bitcoin", "ons", "silver", "oil_brent"}
 
@@ -32,7 +32,7 @@ def fetch_prices():
     pattern = r'data-market-row="([^"]+)"[^>]*?data-price="([^"]*)"'
     seen = set()
     for symbol, price_str in re.findall(pattern, html):
-        if symbol in seen or symbol not in SYMBOLS or not price_str:
+        if symbol in seen or not price_str:
             continue
         seen.add(symbol)
         try:
@@ -46,22 +46,26 @@ def fetch_prices():
     return results
 
 
-def fmt(value):
-    if value == 0:
-        return "---"
+def toman_fmt(value):
+    if value == 0 or value is None:
+        return "نامشخص"
     v = int(value)
     if v >= 1_000_000_000:
-        return f"{v/1_000_000_000:.2f} milliard"
+        return f"{v/1_000_000_000:.2f} میلیارد تومان"
     if v >= 1_000_000:
-        return f"{v/1_000_000:.2f} M"
-    return f"{v:,}"
+        return f"{v/1_000_000:.2f} میلیون تومان"
+    return f"{v:,} تومان"
 
 
 def build_message(prices):
     iran_tz = timezone(timedelta(hours=3, minutes=30))
     now = datetime.now(iran_tz).strftime("%H:%M")
-    lines = [f"\U0001f4c8 به روز [{now}]", "━" * 28, ""]
-    for symbol, (emoji, name) in SYMBOLS.items():
+    lines = [
+        f"\U0001f4c8 قیمت لحظه‌ای بازار [{now}]",
+        "━" * 28,
+        "",
+    ]
+    for symbol, emoji, name in SYMBOLS:
         price = prices.get(symbol, 0)
         if symbol == "crypto-bitcoin":
             if price > 0:
@@ -69,20 +73,28 @@ def build_message(prices):
                 lines.append(f"   \U0001f1fa\U0001f1f8 ${price:,.2f}")
                 dr = prices.get("price_dollar_rl", 0)
                 if dr > 0:
-                    lines.append(f"   \U0001f1ee\U0001f1f7 {fmt(price * dr)} T")
+                    lines.append(f"   \U0001f1ee\U0001f1f7 {toman_fmt(price * dr)}")
                 lines.append("")
             continue
         lines.append(f"{emoji} {name}:")
-        lines.append(f"   {fmt(price)} T")
+        lines.append(f"   {toman_fmt(price)}")
         lines.append("")
-    lines.extend(["━" * 28, "\U0001f501 Har saat", "\U0001f4dd tgju.org"])
+    lines.extend([
+        "━" * 28,
+        "\U0001f551 بروزرسانی هر ساعت",
+        "\U0001f4dd منبع: tgju.org",
+    ])
     return "\n".join(lines)
 
 
 def send(text):
+    keyboard = {
+        "inline_keyboard": [[{"text": "\U0001f504 به روز رسانی قیمت‌ها", "callback_data": "refresh_prices"}]]
+    }
     r = requests.post(
         f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-        json={"chat_id": CHAT_ID, "text": text}, timeout=15
+        json={"chat_id": CHAT_ID, "text": text, "reply_markup": keyboard},
+        timeout=15,
     )
     return r.json()
 
